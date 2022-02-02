@@ -21,7 +21,8 @@ class OrderEmailDelay extends IDBTable {
                                     AND STORE.STORE_TP_CD = 'S'
                                     AND STORE.STORE_CD <> '00'
                                     AND SO.CUST_CD = CUST.CUST_CD
-                                     AND SYSDATE – CUST.SO_DELAY_NOTIFY_DT >= $custDaysBetweenORderDelayNotice
+                                    -- AND SYSDATE – CUST.SO_DELAY_NOTIFY_DT >= $custDaysBetweenORderDelayNotice
+                                    AND SYSDATE – 30 >= $custDaysBetweenORderDelayNotice
                                     GROUP BY SO_DOC_NUM
                                            , DEL_DOC_NUM
                                            , SO.CUST_CD
@@ -81,7 +82,7 @@ class OrderEmailDelay extends IDBTable {
         }	
         
         $this->last_sql = $this->withClause.$select.$column_list." ".$from.$where." ".$postclauses;
-
+        echo $this->last_sql;
 //error_log($this->last_sql."\n", 3, "fbi.log");
         // Perform the query          
         $this->query_result = $this->execStmt($this->last_sql);
