@@ -26,41 +26,98 @@
             return $db;
 
         }
-        /*-----------------------------------------------------------------------------------
-         *------------------------------------- genDocNum -----------------------------------
-         *-----------------------------------------------------------------------------------
-         *
-         * Gernerate a GERS Document number for store codes. Assumes the system date
-         *
-         * @param $db 	The database connection as an IDBResource instance
-         * @param $storeCd The GERS Store Code
-         * @return String GERS Document number, False on error
-         * 
-         */
-        public function genDocNum($db, $storeCd) {
-            global $logger;
-            $stmt = oci_parse(
-                $db->getConnection(),
-                'CALL MOR_UTILS.genDocNum(:STORECD, sysdate, :DOCNUM, :DOCSEQ) into :TEMP'
-            );
 
-            if (! $stmt) {
-                            $logger->error(oci_error());
-                            return false;
+        /*********************************************************************************************************************************************
+        /*********************************************************************************************************************************************
+        /*********************************************************************************************************************************************
+         * * generateCSV: 
+         * *    Function will generate a csv file on the path provided with the array of data 
+         * * Arguments: 
+         * *    outpath: Path where the file writes   
+         * *    filename: Name of the file 
+         * *    data: (Array) data of array 
+         * *
+         * * Return: Boolean true for succesfule else false 
+         * *
+         *********************************************************************************************************************************************
+         *********************************************************************************************************************************************
+         *********************************************************************************************************************************************/
+        function generateCSV( $outpath,  $filename, $data ){
+            global $appconfig, $logger;
+            
+            try{ 
+                $logger->debug( "Writing csv file to: " . $outpath . $file );
+                $handle = fopen( $outpath . $filename, 'a+' );
+                foreach( $data as $value ){
+                    fputcsv( $handle, $data );
+                }
+                fclose( $handle );
+                $logger->debug( "CSV file created" );
+                return true;
             }
-
-            oci_bind_by_name($stmt, ':STORECD', $storeCd);
-            oci_bind_by_name($stmt, ':DOCNUM', $docNum, 11);
-            oci_bind_by_name($stmt, ':DOCSEQ', $seqNum, 4);
-            oci_bind_by_name($stmt, ':TEMP', $autoDoc, 11);
-
-            if (!oci_execute($stmt)) {
-                $logger->error(oci_error());
+            catch( Exception $e ){
+                $logger->error( "Could not create csv file" );
                 return false;
             }
-            return $seqNum;
 
-            return $autoDoc;
+        }
+
+        /*********************************************************************************************************************************************
+        /*********************************************************************************************************************************************
+        /*********************************************************************************************************************************************
+         * * email: 
+         * *    Function will email 
+         * * Arguments: 
+         * *    host: (Array) with following keys and values   
+         * *        - Host  
+         * *        - Port
+         * *    to: (Array) Filled with email values
+         * *        - Emails 
+         * *    from: (Array) 
+         * *        - From: Email
+         * *        - Name: Name of email 
+         * *    Attachments: (Array)
+         * *        - Value of file paths
+         * *    Message: (String)
+         * *       - Body of email message
+         * *
+         * * Return: Boolean true for succes else otherwise
+         * *
+         *********************************************************************************************************************************************
+         *********************************************************************************************************************************************
+         *********************************************************************************************************************************************/
+        function email( $host, $to, $from, $attachments, $message ){
+            global $logger;
+
+            $mail = new PHPMailer;
+            $mail->isSMTP();
+            $mail->Host = $host;
+            $mail->Port = $port;
+            $mail->From =  $from['from'];
+            $mail->FromName = $from['name'];
+
+            foreach( $to as $recipient ){
+                $mail->addAddress($recipient); //should go to finance@morfurniture.com
+            }
+            $mail->addReplyTo('');
+            $mail->WordWrap = 50;
+            
+            foreach( $attachements as $attachment ){
+                $mail->addAttachment($attachment);
+            }
+
+            $mail->isHTML(true);
+            $mail->Subject = $message['subject'];
+            $mail->Body    = $message['body'];
+
+            if(!$mail->send()) {
+                $logger->debug( 'Mailer Error: ' . $mail->ErrorInfo );
+                return false;
+            } 
+            else {
+                $logger->debug( 'Message has been sent' );
+                return true;
+            }
         }
     }
 ?>

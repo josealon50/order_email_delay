@@ -28,6 +28,8 @@
 
     $logger = new ILog($appconfig['order_email_delay']['logger']['username'], sprintf( $appconfig['order_email_delay']['logger']['log_name'], date('ymdhms')), $appconfig['order_email_delay']['logger']['log_folder'], $appconfig['order_email_delay']['logger']['priority']);
 
+    $host = array( 'host' => $appconfig['order_email_delay']['email']['host'], 'port' => $appconfig['order_email_delay']['email']['port'] );
+    $from  = array( 'from' => $appconfig['order_email_delay']['email']['form'], 'name' => $appconfig['order_email_delay']['email']['name'] );
     $mor = new MorCommon();
     $db = $mor->standAloneAppConnect();
     if( !$db ){
@@ -40,7 +42,9 @@
 
     $logger->debug( "Querying for delayed orders" );
     $ordersDelayed = getOrdersDelayed( $db, $params ); 
+    $logger->debug( print_r($ordersDelayed, 1) );
     
+    $emailsNotSent = [];
     foreach( $ordersDelayed as $order ){
         //Only records with name and email set 
         if ( $order['NAME'] == '' || $order['EMAIL_ADDR'] == '' ){
@@ -55,9 +59,164 @@
         }
 
         $body = getEmailBody( $appconfig['order_email_delay']['replacements'], $order, $appconfig['order_email_delay']['email_body'] );
+        $message = array( 'subject' => $appconfig['order_email_delay']['email']['subject'], 'body' => $body );
+        $error = $mor->email( $host, $order['EMAIL_ADDR'], $from, [], $message );
+        if( $error ){
+            $logger->debug( "Email was not sent for: " . print_r($order, 1) );
+            array_push( $emailsNotSent, $order );
+            continue;
+        }
+
+        $error = postCustomerDelayComment( $db, $order['CUST_CD'] );
+        if( $error ) exit(1); 
+        
+        //Query SO First for sales order details
+        $sale = getSalesOrder( $db, $order['DEL_DOC_NUM'] );
+        $error = postSalesOrderDelayComment( $db, $sale );
+        if( $error ) exit(1); 
+
 
     } 
     
+    if( count($emailsNotSent) > 0 ){
+        //Email errors  
+        $filename = sprintf( $appconfig['order_email_delay']['error_filename'], date('YmdHis' ));
+        if( $mor->generateCSV($appconfig['order_email_delay']['out'], $filename, $emailsNotSent) ){
+            $logger->debug( "Error generating csv" );
+            exit(1);
+        }
+        
+        $from = array( 'from' => $appconfig['order_email_delay']['email']['email_error_from'], 'name' => $appconfig['order_email_delay']['email']['email_error_name']);
+        $to = array( $appconfig['order_email_delay']['email_error_to'] );
+        $attachements = array( $appconfig['order_email_delay']['out'] . $filename );
+
+        if( !$mor->email( $host, $to, $from, $attachments, $appconfig['order_email_delay']['email_error_message'] )){
+            $logger->error( 'Error email was not sent' );
+        }
+    }
+
+
+
+
+
+
+    /*********************************************************************************************************************************************
+    /*********************************************************************************************************************************************
+    /*********************************************************************************************************************************************
+     * * getSalesOrder: 
+     * *    Function will query SO for DEL_DOC_NUM 
+     * * Arguments: 
+     * *    db: Database connection   
+     * *    sale: Customer and sales info
+     * *
+     * * Return: Array with sales order information 
+     * *
+     *********************************************************************************************************************************************
+     *********************************************************************************************************************************************
+     *********************************************************************************************************************************************/
+    function getSalesOrder( $db, $sale ){
+        global $appconfig, $logger;
+
+        $so = new SaleOrder($db);
+        $where  = "WHERE DEL_DOC_NUM = '" . $sale['DEL_DOC_NUM'] . "' ";
+        $resut = $so->query( $where );
+
+        if( $result < 0 ){
+            $logger->error( "Could not query table SO" );
+            exit(1);
+        }
+        
+        $sale = [];
+        while( $so->next() ){
+            $sale['SO_WR_DT'] = $so->get_SO_WR_DT();
+            $sale['SO_STORE_CD'] = $so->get_SO_STORE_CD();
+            $sale['SO_SEQ_NUM'] = $so->get_SO_SEQ_NUM();
+            $sale['DEL_DOC_NUM'] = $delDocNum;
+            $sale['ORIGIN_CD'] = $so->get_ORIGIN_CD();
+            
+        }
+
+        return $sale;
+
+            
+    }
+
+    /*********************************************************************************************************************************************
+    /*********************************************************************************************************************************************
+    /*********************************************************************************************************************************************
+     * * postSalesOrderDelayComment: 
+     * *    Function will save order delay comment 
+     * * Arguments: 
+     * *    db: Database connection   
+     * *    so: Sales Order info
+     * *
+     * * Return: Boolean true succesful else otherwise 
+     * *
+     *********************************************************************************************************************************************
+     *********************************************************************************************************************************************
+     *********************************************************************************************************************************************/
+    function postSalesOrderDelayComment( $db, $so ){
+        global $appconfig, $logger;
+        
+        $now = new IDate();
+        $soComment = new SOComment($db);
+        $soComment->set_SO_WR_DT( $sale['SO_WR_DT'] );
+        $soComment->set_STORE_CD( $sale['SO_STORE_CD'] );
+        $soComment->set_SO_SEQ_NUM( $sale['SO_SEQ_NUM'] );
+        $soComment->set_DT( $now->toStringOracle() );
+        $soComment->set_TEXT( sprintf($appconfig['order_email_delay']['so_comment_msg'], $so['DEL_DOC_NUM']) );
+        $soComment->set_DEL_DOC_NUM( $so['DEL_DOC_NUM'] );
+        //$soComment->set_PERM( $now->toStringOracle() );
+        $soComment->set_CMNT_TYPE( $appconfig['order_email_delay']['cmnt_type'] );
+        //$soComment->set_XPOS_UPDATEABLE( $now->toStringOracle() );
+        $soComment->set_EMP_CD( $now->toStringOracle() );
+        $soComment->set_ORIGIN_CD( $so['ORIGIN_CD'] );
+
+        $result = $soComment->insert( true, false );
+        if( !$result ) {
+            $logger->error( "INSERT into SO_CMNT failed" );
+            return false;
+        }
+
+        return true;
+
+
+
+    }
+
+    /*********************************************************************************************************************************************
+    /*********************************************************************************************************************************************
+    /*********************************************************************************************************************************************
+     * * postCustomerDelayComment: 
+     * *    Function will post customer delay comment 
+     * * Arguments: 
+     * *    db: Database connection   
+     * *    custCd: Customer code 
+     * *
+     * * Return: Boolean true succesful else otherwise 
+     * *
+     *********************************************************************************************************************************************
+     *********************************************************************************************************************************************
+     *********************************************************************************************************************************************/
+    function postCustomerDelayComment( $db, $custCd ){
+        global $appconfig, $logger;
+
+        //Insert into customer comment that we contact them
+        $custComment = new CustComment($db);
+        $custComment->set_CUST_CD( $custCd );
+        $custComment->set_CMNT_DT( $now->toStringOracle() );
+        $custComment->set_TEXT( $appconfig['order_email_delay']['cust_comment'] );
+        $custComment->set_EMP_CD_OP( $appconfgi['order_email_delay']['emp_cd'] );
+
+        $result = $custComment->insert( true, false );
+        if( !$result ) {
+            $logger->error( "INSERT into CUST_COMMENT failed" );
+            return false;
+        }
+
+        return true;
+
+    }
     
     /*********************************************************************************************************************************************
     /*********************************************************************************************************************************************
