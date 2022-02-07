@@ -16,6 +16,7 @@ class CustComment extends IDBTable {
                                            "CMNT_DT"
                                         );
 
+         $this->setAutoIDColumn("CUST_CD");
 
 	}
 }

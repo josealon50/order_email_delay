@@ -2,9 +2,13 @@
 
 class OrderEmailDelay extends IDBTable {
 	protected $withClause;
+    protected $soAgeInDaysToNotifyOfDelay;
+    protected $custDaysBetweenOrderDelayNotice;
 
-	public function __construct($db, $soAgeInDaysToNotifyOfDelay, $custDaysBetweenORderDelayNotice ) {
+	public function __construct($db, $soAgeInDaysToNotifyOfDelay, $custDaysBetweenOrderDelayNotice ) {
 		parent::__construct($db);
+        $this->soAgeInDaysToNotifyOfDelay = $soAgeInDaysToNotifyOfDelay;
+        $this->custDaysBetweenOrderDelayNotice = $soAgeInDaysToNotifyOfDelay;
 
         $this->withClause =  "  WITH non_splitorders AS ( 
                                     SELECT SO_DOC_NUM
@@ -16,13 +20,12 @@ class OrderEmailDelay extends IDBTable {
                                     FROM SO, STORE, CUST
                                     WHERE SO.STAT_CD = 'O'
                                     AND SO.ORD_TP_CD = 'SAL'
-                                    AND SYSDATE - SO_WR_DT >= $soAgeInDaysToNotifyOfDelay
+                                    AND SYSDATE - SO_WR_DT >= $this->soAgeInDaysToNotifyOfDelay
                                     AND SO.SO_STORE_CD = STORE.STORE_CD
                                     AND STORE.STORE_TP_CD = 'S'
                                     AND STORE.STORE_CD <> '00'
                                     AND SO.CUST_CD = CUST.CUST_CD
-                                    -- AND SYSDATE – CUST.SO_DELAY_NOTIFY_DT >= $custDaysBetweenORderDelayNotice
-                                    AND SYSDATE – 30 >= $custDaysBetweenORderDelayNotice
+                                    AND SYSDATE - SO_DELAY_NOTIFICATION_DT >= $this->custDaysBetweenOrderDelayNotice
                                     GROUP BY SO_DOC_NUM
                                            , DEL_DOC_NUM
                                            , SO.CUST_CD
@@ -82,7 +85,6 @@ class OrderEmailDelay extends IDBTable {
         }	
         
         $this->last_sql = $this->withClause.$select.$column_list." ".$from.$where." ".$postclauses;
-        echo $this->last_sql;
 //error_log($this->last_sql."\n", 3, "fbi.log");
         // Perform the query          
         $this->query_result = $this->execStmt($this->last_sql);

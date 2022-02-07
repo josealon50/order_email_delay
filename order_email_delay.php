@@ -21,6 +21,7 @@
 ***/
     include_once('../config.php');
     include_once('autoload.php');
+    include_once( './libs/PHPMailer/PHPMailerAutoload.php' );
 
     date_default_timezone_set('America/Los_Angeles');
 
@@ -29,7 +30,7 @@
     $logger = new ILog($appconfig['order_email_delay']['logger']['username'], sprintf( $appconfig['order_email_delay']['logger']['log_name'], date('ymdhms')), $appconfig['order_email_delay']['logger']['log_folder'], $appconfig['order_email_delay']['logger']['priority']);
 
     $host = array( 'host' => $appconfig['order_email_delay']['email']['host'], 'port' => $appconfig['order_email_delay']['email']['port'] );
-    $from  = array( 'from' => $appconfig['order_email_delay']['email']['form'], 'name' => $appconfig['order_email_delay']['email']['name'] );
+    $from  = array( 'from' => $appconfig['order_email_delay']['email']['from'], 'name' => $appconfig['order_email_delay']['email']['name'] );
     $mor = new MorCommon();
     $db = $mor->standAloneAppConnect();
     if( !$db ){
@@ -59,6 +60,7 @@
         }
 
         $body = getEmailBody( $appconfig['order_email_delay']['replacements'], $order, $appconfig['order_email_delay']['email_body'] );
+        /*
         $message = array( 'subject' => $appconfig['order_email_delay']['email']['subject'], 'body' => $body );
         $error = $mor->email( $host, $order['EMAIL_ADDR'], $from, [], $message );
         if( $error ){
@@ -74,7 +76,11 @@
         $sale = getSalesOrder( $db, $order['DEL_DOC_NUM'] );
         $error = postSalesOrderDelayComment( $db, $sale );
         if( $error ) exit(1); 
+         */
 
+        //Update customer 
+        $updt = updateCustomerNotificationDate( $db, $order['CUST_CD'] );
+        if( !$updt ) $logger->error( "Fail update SO" );
 
     } 
     
@@ -96,9 +102,44 @@
     }
 
 
+    /*********************************************************************************************************************************************
+    /*********************************************************************************************************************************************
+    /*********************************************************************************************************************************************
+     * * updateCustomerNotificationDate: 
+     * *    Function will update notification date in cust table 
+     * * Arguments: 
+     * *    db: Database connection   
+     * *    customerCode: Customer Code
+     * *
+     * * Return: Boolean true else otherwise 
+     * *
+     *********************************************************************************************************************************************
+     *********************************************************************************************************************************************
+     *********************************************************************************************************************************************/
+    function updateCustomerNotificationDate( $db, $customerCode ){
+        global $appconfig, $logger; 
+        
+        $now = new IDate(); 
+        $cust = new Cust( $db );
+        $where = "WHERE CUST_CD = '" . $customerCode . "' ";
 
+        $result = $cust->query($where);
+        if( $result < 0 ){
+            $logger->debug( 'Could not find customer info: ' . $customerCode  );
+            exit(1);
+        }
+        
+        $cust->set_SO_DELAY_NOTIFICATION_DT( $now->toStringOracle() );
 
+        $updt = $cust->update( $where, false );
+        if( $updt < 0 ){
+            $logger->error( "Could not update customer SO_DELAY_NOTIFY_DT" );
+            return false;
+        }
 
+        return true;
+
+    }
 
     /*********************************************************************************************************************************************
     /*********************************************************************************************************************************************
@@ -114,12 +155,12 @@
      *********************************************************************************************************************************************
      *********************************************************************************************************************************************
      *********************************************************************************************************************************************/
-    function getSalesOrder( $db, $sale ){
+    function getSalesOrder( $db, $delDocNum ){
         global $appconfig, $logger;
 
-        $so = new SaleOrder($db);
-        $where  = "WHERE DEL_DOC_NUM = '" . $sale['DEL_DOC_NUM'] . "' ";
-        $resut = $so->query( $where );
+        $so = new SalesOrder($db);
+        $where  = "WHERE DEL_DOC_NUM = '" . $delDocNum . "' ";
+        $result = $so->query( $where );
 
         if( $result < 0 ){
             $logger->error( "Could not query table SO" );
@@ -133,7 +174,6 @@
             $sale['SO_SEQ_NUM'] = $so->get_SO_SEQ_NUM();
             $sale['DEL_DOC_NUM'] = $delDocNum;
             $sale['ORIGIN_CD'] = $so->get_ORIGIN_CD();
-            
         }
 
         return $sale;
@@ -155,24 +195,31 @@
      *********************************************************************************************************************************************
      *********************************************************************************************************************************************
      *********************************************************************************************************************************************/
-    function postSalesOrderDelayComment( $db, $so ){
+    function postSalesOrderDelayComment( $db, $sale ){
         global $appconfig, $logger;
         
         $now = new IDate();
+        $soWrDt = new IDate();
+        $seq = getMaxSeqSoComment( $db, $sale['DEL_DOC_NUM'] );
+        var_dump($seq);
+        $soWrDt->setDate( $sale['SO_WR_DT'] );
+
         $soComment = new SOComment($db);
-        $soComment->set_SO_WR_DT( $sale['SO_WR_DT'] );
-        $soComment->set_STORE_CD( $sale['SO_STORE_CD'] );
+        $soComment->set_SO_WR_DT( $soWrDt->toStringOracle() );
+        $soComment->set_SO_STORE_CD( $sale['SO_STORE_CD'] );
         $soComment->set_SO_SEQ_NUM( $sale['SO_SEQ_NUM'] );
         $soComment->set_DT( $now->toStringOracle() );
-        $soComment->set_TEXT( sprintf($appconfig['order_email_delay']['so_comment_msg'], $so['DEL_DOC_NUM']) );
-        $soComment->set_DEL_DOC_NUM( $so['DEL_DOC_NUM'] );
-        //$soComment->set_PERM( $now->toStringOracle() );
+        $soComment->set_TEXT( sprintf($appconfig['order_email_delay']['so_comment_msg'], $sale['DEL_DOC_NUM']) );
+        $soComment->set_DEL_DOC_NUM( $sale['DEL_DOC_NUM'] );
         $soComment->set_CMNT_TYPE( $appconfig['order_email_delay']['cmnt_type'] );
+        $soComment->set_ORIGIN_CD( $sale['ORIGIN_CD'] );
+        $col = "set_SEQ#";
+        $soComment->$col( $seq );
+        //$soComment->set_EMP_CD();
         //$soComment->set_XPOS_UPDATEABLE( $now->toStringOracle() );
-        $soComment->set_EMP_CD( $now->toStringOracle() );
-        $soComment->set_ORIGIN_CD( $so['ORIGIN_CD'] );
+        //$soComment->set_PERM( $now->toStringOracle() );
 
-        $result = $soComment->insert( true, false );
+        $result = $soComment->insert( false, false );
         if( !$result ) {
             $logger->error( "INSERT into SO_CMNT failed" );
             return false;
@@ -201,21 +248,56 @@
     function postCustomerDelayComment( $db, $custCd ){
         global $appconfig, $logger;
 
+        $now = new IDate();
+        $seq = getMaxSeqCustComment( $db, $custCd );
+
         //Insert into customer comment that we contact them
         $custComment = new CustComment($db);
         $custComment->set_CUST_CD( $custCd );
         $custComment->set_CMNT_DT( $now->toStringOracle() );
+        $col = "set_SEQ#";
+        $custComment->$col( $seq );
         $custComment->set_TEXT( $appconfig['order_email_delay']['cust_comment'] );
-        $custComment->set_EMP_CD_OP( $appconfgi['order_email_delay']['emp_cd'] );
+        $custComment->set_EMP_CD_OP( $appconfig['order_email_delay']['emp_cd'] );
 
-        $result = $custComment->insert( true, false );
+        $result = $custComment->insert( false, false );
         if( !$result ) {
             $logger->error( "INSERT into CUST_COMMENT failed" );
             return false;
         }
-
         return true;
 
+    }
+
+    /*********************************************************************************************************************************************
+    /*********************************************************************************************************************************************
+    /*********************************************************************************************************************************************
+     * * getMaxSeqSoComment: 
+     * *    Function will get max seq number from so comment 
+     * * Arguments: 
+     * *    db: Database connection   
+     * *    delDocNum: DEL_DOC_NUM 
+     * *
+     * * Return: (Int) Max sequence number null otherwise 
+     * *
+     *********************************************************************************************************************************************
+     *********************************************************************************************************************************************
+     *********************************************************************************************************************************************/
+    function getMaxSeqSoComment( $db, $delDocNum ){
+        global $appconfig, $logger;
+        
+        $max = new MaxSoCmnt( $db );
+        $where = "WHERE DEL_DOC_NUM = '" . $delDocNum . "' ";
+        var_dump($where);
+        $result = $max->query( $where );
+        if( $result < 0 ){
+            $logger->error( "Could not query table SO_CMNT");
+            exit(1);
+        }
+
+        while( $max->next() ){
+            return is_null($max->get_MAX_SEQ()) ? 1 : $max->get_MAX_SEQ(); 
+        }
     }
     
     /*********************************************************************************************************************************************
@@ -239,7 +321,6 @@
         foreach( $replacements as $key => $value ){
             $body = str_replace( $value, $data[$key], $body ); 
         }
-
         return $body;
     }
     
@@ -262,7 +343,8 @@
         
         $delays = new OrderEmailDelay( $db, $params['SO_AGE_IN_DAYS_TO_NOTIFY_OF_DELAY'], $params['CUST_DAYS_BETWEEN_ORDER_DELAY_NOTICE'] );
         $where = "WHERE non_splitorders.DEL_DOC_NUM = SO_LN.DEL_DOC_NUM 
-                    AND SO_LN.VOID_FLAG = 'N' AND SO_LN.QTY > 0 
+                    AND SO_LN.VOID_FLAG = 'N' 
+                    AND SO_LN.QTY > 0 
                     AND SO_LN.EST_FILL_DT > SYSDATE + " . $params['ACCEPTABLE_DAYS_TO_WAIT_FOR_INV'] . "
                     AND SO_LN.ITM_CD = ITM.ITM_CD 
                     AND ITM.ITM_TP_CD = 'INV'";
@@ -277,12 +359,20 @@
         $orders = []; 
         while ( $delays->next() ){
             $tmp = [];
+            $tmp['DEL_DOC_NUM'] = $delays->get_DEL_DOC_NUM();
             $tmp['CUST_CD'] = $delays->get_CUST_CD();
             $tmp['EMAIL_ADDR'] = $delays->get_EMAIL_ADDR();
             $tmp['NAME'] = $delays->get_NAME();
 
             array_push( $orders, $tmp );
         }
+        //TESTING REMOVE
+        $tmp = [];
+        $tmp['DEL_DOC_NUM'] = '08011BAGZHI';
+        $tmp['CUST_CD'] = 'UPHOR27368'; 
+        $tmp['EMAIL_ADDR'] = 'test@test.com'; 
+        $tmp['NAME'] = 'Jose Leon'; 
+        array_push( $orders, $tmp );
 
         return $orders;
 

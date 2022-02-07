@@ -71,6 +71,7 @@ class Cust extends IDBTable {
 										, 'CII_CD'=>'CII_CD'
 										, 'MAX_CR_LIMIT'=>'MAX_CR_LIMIT'
 										, 'ADDR_TP_CD'=>'ADDR_TP_CD'
+										, 'SO_DELAY_NOTIFICATION_DT'=>'SO_DELAY_NOTIFICATION_DT'
 										);
 
 		$this->dbcolumns_date        = array(
@@ -81,6 +82,7 @@ class Cust extends IDBTable {
 											, 'ADDR_CHG_DT'
 											, 'DL_EXP_DT'
 											, 'BEG_ADDR_DT'
+											, 'SO_DELAY_NOTIFICATION_DT'
 											);
 
  		$this->setAutoIDColumn("CUST_CD");
