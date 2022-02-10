@@ -25,7 +25,7 @@ class OrderEmailDelay extends IDBTable {
                                     AND STORE.STORE_TP_CD = 'S'
                                     AND STORE.STORE_CD <> '00'
                                     AND SO.CUST_CD = CUST.CUST_CD
-                                    AND SYSDATE - SO_DELAY_NOTIFICATION_DT >= $this->custDaysBetweenOrderDelayNotice
+                                    AND ( SYSDATE - SO_DELAY_NOTIFICATION_DT >= $this->custDaysBetweenOrderDelayNotice OR SO_DELAY_NOTIFICATION_DT IS NULL) 
                                     GROUP BY SO_DOC_NUM
                                            , DEL_DOC_NUM
                                            , SO.CUST_CD
