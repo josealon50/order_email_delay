@@ -18,9 +18,8 @@ class SOComment extends IDBTable {
                         'EMP_CD'=>'EMP_CD',
                         'ORIGIN_CD'=>'ORIGIN_CD',
 		);
-		$this->dbcolumns_date = array(
-                                        'DT'
-		);
+
+		$this->dbcolumns_date = array( 'DT' );
 
 		$this->setAutoIDColumn('SO_WR_DT');
 	}

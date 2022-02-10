@@ -11,8 +11,8 @@
  * *    - Order has at least one line that does not have reserver quantity
  * *    - Order will not be filled in the next 14 days.
  * * 
- * * Arguments: 
- * * Out: 
+ * * Arguments: If argument email is passed script will send emails, if argument no_email script will not send emails
+ * * Out: Email and No email send CSV
  * *
  * *-------------------------------------------------------------------------------------------------------------------------------------
  * * 01/11/21   JL  Created Script
@@ -29,8 +29,10 @@
 
     $logger = new ILog($appconfig['order_email_delay']['logger']['username'], sprintf( $appconfig['order_email_delay']['logger']['log_name'], date('ymdhms')), $appconfig['order_email_delay']['logger']['log_folder'], $appconfig['order_email_delay']['logger']['priority']);
 
+    $sendEmail = $argv[1] === 'email' ? true : false;
     $host = array( 'host' => $appconfig['order_email_delay']['email']['host'], 'port' => $appconfig['order_email_delay']['email']['port'] );
     $from  = array( 'from' => $appconfig['order_email_delay']['email']['from'], 'name' => $appconfig['order_email_delay']['email']['name'] );
+
     $mor = new MorCommon();
     $db = $mor->standAloneAppConnect();
     if( !$db ){
@@ -46,59 +48,70 @@
     $logger->debug( print_r($ordersDelayed, 1) );
     
     $emailsNotSent = [];
+    $emailsSent = [];
     foreach( $ordersDelayed as $order ){
         //Only records with name and email set 
         if ( $order['NAME'] == '' || $order['EMAIL_ADDR'] == '' ){
             $logger->debug( "Data inconsistency found" );
             $logger->debug( print_r($order, 1) );
+            array_push( $emailsNotSent, $order );
             continue;
         }
         //Validate email address
         if ( !filter_var($order['EMAIL_ADDR'], FILTER_VALIDATE_EMAIL) ){ 
             $logger->debug( "Email invalid " . $order['EMAIL_ADDR'] . " for " . $order['CUST_CD'] );
-            continue;
-        }
-
-        $body = getEmailBody( $appconfig['order_email_delay']['replacements'], $order, $appconfig['order_email_delay']['email_body'] );
-        /*
-        $message = array( 'subject' => $appconfig['order_email_delay']['email']['subject'], 'body' => $body );
-        $error = $mor->email( $host, $order['EMAIL_ADDR'], $from, [], $message );
-        if( $error ){
-            $logger->debug( "Email was not sent for: " . print_r($order, 1) );
             array_push( $emailsNotSent, $order );
             continue;
         }
+        if( $sendEmail ) {
+            $body = getEmailBody( $appconfig['order_email_delay']['replacements'], $order, $appconfig['order_email_delay']['email_body'] );
+            $message = array( 'subject' => $appconfig['order_email_delay']['email']['subject'], 'body' => $body );
+            $to = array($order['EMAIL_ADDR']);
+            $error = $mor->email( $host, $to, $from, [], $message );
+            if( $error ){
+                $logger->debug( "Email was not sent for: " . print_r($order, 1) );
+                array_push( $emailsNotSent, $order );
+                continue;
+            }
+        }
+        //Save sent emails
+        array_push( $emailsSent, $order );
 
         $error = postCustomerDelayComment( $db, $order['CUST_CD'] );
-        if( $error ) exit(1); 
+        if( !$error ) exit(1); 
         
         //Query SO First for sales order details
         $sale = getSalesOrder( $db, $order['DEL_DOC_NUM'] );
         $error = postSalesOrderDelayComment( $db, $sale );
-        if( $error ) exit(1); 
-         */
+        if( !$error ) exit(1); 
 
         //Update customer 
         $updt = updateCustomerNotificationDate( $db, $order['CUST_CD'] );
         if( !$updt ) $logger->error( "Fail update SO" );
 
     } 
+
+    //Generate csv for emails sent
+    $filename = sprintf( $appconfig['order_email_delay']['email_sent_filename'], date('YmdHis' ));
+    $error_filename = sprintf( $appconfig['order_email_delay']['error_filename'], date('YmdHis' ));
+    $attachments = array( $appconfig['order_email_delay']['out'] . $filename, $appconfig['order_email_delay']['out'] . $error_filename  );
+
+    if( $mor->generateCSV($appconfig['order_email_delay']['out'], $filename, [ 'DEL_DOC_NUM', 'CUST_CD', 'EMAIL_ADDR', 'NAME' ], $emailsSent) ){
+        $logger->debug( "Error generating csv" );
+        exit(1);
+    }
     
     if( count($emailsNotSent) > 0 ){
         //Email errors  
-        $filename = sprintf( $appconfig['order_email_delay']['error_filename'], date('YmdHis' ));
-        if( $mor->generateCSV($appconfig['order_email_delay']['out'], $filename, $emailsNotSent) ){
+        if( $mor->generateCSV($appconfig['order_email_delay']['out'], $error_filename, [ 'DEL_DOC_NUM', 'CUST_CD', 'EMAIL_ADDR', 'NAME' ], $emailsNotSent) ){
             $logger->debug( "Error generating csv" );
             exit(1);
         }
         
-        $from = array( 'from' => $appconfig['order_email_delay']['email']['email_error_from'], 'name' => $appconfig['order_email_delay']['email']['email_error_name']);
-        $to = array( $appconfig['order_email_delay']['email_error_to'] );
-        $attachements = array( $appconfig['order_email_delay']['out'] . $filename );
-
-        if( !$mor->email( $host, $to, $from, $attachments, $appconfig['order_email_delay']['email_error_message'] )){
-            $logger->error( 'Error email was not sent' );
-        }
+    }
+    $to = array( $appconfig['order_email_delay']['email_error_to'] );
+    if( !$mor->email( $host, $to, $from, $attachments, $appconfig['order_email_delay']['email_error_message'] )){
+        $logger->error( 'Error email was not sent' );
     }
 
 
@@ -169,7 +182,7 @@
         
         $sale = [];
         while( $so->next() ){
-            $sale['SO_WR_DT'] = $so->get_SO_WR_DT();
+            $sale['SO_WR_DT'] = $so->get_SO_WR_DT('d-M-Y');
             $sale['SO_STORE_CD'] = $so->get_SO_STORE_CD();
             $sale['SO_SEQ_NUM'] = $so->get_SO_SEQ_NUM();
             $sale['DEL_DOC_NUM'] = $delDocNum;
@@ -200,8 +213,7 @@
         
         $now = new IDate();
         $soWrDt = new IDate();
-        $seq = getMaxSeqSoComment( $db, $sale['DEL_DOC_NUM'] );
-        var_dump($seq);
+        $seq = getMaxSeqSoComment( $db, $sale );
         $soWrDt->setDate( $sale['SO_WR_DT'] );
 
         $soComment = new SOComment($db);
@@ -235,12 +247,12 @@
     /*********************************************************************************************************************************************
     /*********************************************************************************************************************************************
      * * postCustomerDelayComment: 
-     * *    Function will post customer delay comment 
+     * *    Function will create comment into cust comment 
      * * Arguments: 
      * *    db: Database connection   
      * *    custCd: Customer code 
      * *
-     * * Return: Boolean true succesful else otherwise 
+     * * Return: Int Max sequence number 
      * *
      *********************************************************************************************************************************************
      *********************************************************************************************************************************************
@@ -261,6 +273,7 @@
         $custComment->set_EMP_CD_OP( $appconfig['order_email_delay']['emp_cd'] );
 
         $result = $custComment->insert( false, false );
+        
         if( !$result ) {
             $logger->error( "INSERT into CUST_COMMENT failed" );
             return false;
@@ -268,7 +281,41 @@
         return true;
 
     }
+    
+    /*********************************************************************************************************************************************
+    /*********************************************************************************************************************************************
+    /*********************************************************************************************************************************************
+     * * getMaxSeqCustComment: 
+     * *    Function will max sequence number for customer comment 
+     * * Arguments: 
+     * *    db: Database connection   
+     * *    custCd: Customer code 
+     * *
+     * * Return: Int Max sequence number 
+     * *
+     *********************************************************************************************************************************************
+     *********************************************************************************************************************************************
+     *********************************************************************************************************************************************/
+    function getMaxSeqCustComment( $db, $custCd ){
+        global $appconfig, $logger;
 
+        $max = new MaxCustCmnt($db);
+        $where = "WHERE CUST_CD = '" . $custCd . "' ";
+        $result = $max->query( $where );
+
+        if( $result < 0 ){
+            $logger->debug( "Could not get mas sequence cust comment" );
+        }
+
+        while( $max->next() ){
+            return $max->get_MAX_SEQ();
+        }
+
+        return 1;
+
+
+
+    }
     /*********************************************************************************************************************************************
     /*********************************************************************************************************************************************
     /*********************************************************************************************************************************************
@@ -283,13 +330,13 @@
      *********************************************************************************************************************************************
      *********************************************************************************************************************************************
      *********************************************************************************************************************************************/
-    function getMaxSeqSoComment( $db, $delDocNum ){
+    function getMaxSeqSoComment( $db, $sale ){
         global $appconfig, $logger;
         
         $max = new MaxSoCmnt( $db );
-        $where = "WHERE DEL_DOC_NUM = '" . $delDocNum . "' ";
-        var_dump($where);
+        $where = "WHERE DEL_DOC_NUM = '" . $sale['DEL_DOC_NUM'] . "' AND SO_WR_DT = '" . $sale['SO_WR_DT'] . "' AND SO_STORE_CD = '" . $sale['SO_STORE_CD'] . "' ";
         $result = $max->query( $where );
+
         if( $result < 0 ){
             $logger->error( "Could not query table SO_CMNT");
             exit(1);
@@ -348,9 +395,10 @@
                     AND SO_LN.EST_FILL_DT > SYSDATE + " . $params['ACCEPTABLE_DAYS_TO_WAIT_FOR_INV'] . "
                     AND SO_LN.ITM_CD = ITM.ITM_CD 
                     AND ITM.ITM_TP_CD = 'INV'";
-        $postclause = "ORDER BY CUST_CD"; 
+        $postclause = "GROUP BY non_splitorders.DEL_DOC_NUM, SO_LN.ITM_CD, CUST_CD, EMAIL_ADDR, NAME ORDER BY CUST_CD"; 
 
         $result = $delays->query( $where, $postclause );
+
         if ( $result < 0 ){
             $logger->error( "Could not query for order delays" );
             exit(1);
@@ -366,13 +414,6 @@
 
             array_push( $orders, $tmp );
         }
-        //TESTING REMOVE
-        $tmp = [];
-        $tmp['DEL_DOC_NUM'] = '08011BAGZHI';
-        $tmp['CUST_CD'] = 'UPHOR27368'; 
-        $tmp['EMAIL_ADDR'] = 'test@test.com'; 
-        $tmp['NAME'] = 'Jose Leon'; 
-        array_push( $orders, $tmp );
 
         return $orders;
 

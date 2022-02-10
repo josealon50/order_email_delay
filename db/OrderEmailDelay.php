@@ -37,9 +37,11 @@ class OrderEmailDelay extends IDBTable {
         $this->tablename        = 'non_splitorders, so_ln, itm ';
 
 		$this->dbcolumns        = array(     'CUST_CD' => 'CUST_CD' 
+                                            ,'DEL_DOC_NUM' => 'DEL_DOC_NUM'
                                             ,'EMAIL_ADDR' => 'EMAIL_ADDR'
                                             ,'NAME' => 'NAME'
                                     );
+        $this->dbcolumns_function = array( 'DEL_DOC_NUM' => 'non_splitorders.DEL_DOC_NUM DEL_DOC_NUM' );
 	}
 
 	public function QueryResult() { 

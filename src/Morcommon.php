@@ -42,14 +42,18 @@
          *********************************************************************************************************************************************
          *********************************************************************************************************************************************
          *********************************************************************************************************************************************/
-        function generateCSV( $outpath,  $filename, $data ){
+        function generateCSV( $outpath,  $filename, $header, $data ){
             global $appconfig, $logger;
             
             try{ 
-                $logger->debug( "Writing csv file to: " . $outpath . $file );
+                $logger->debug( "Writing csv file to: " . $outpath . $filename );
                 $handle = fopen( $outpath . $filename, 'a+' );
+
+                //Write header 
+                fputcsv( $handle, $header );
+
                 foreach( $data as $value ){
-                    fputcsv( $handle, $data );
+                    fputcsv( $handle, $value );
                 }
                 fclose( $handle );
                 $logger->debug( "CSV file created" );
@@ -91,8 +95,8 @@
 
             $mail = new PHPMailer;
             $mail->isSMTP();
-            $mail->Host = $host;
-            $mail->Port = $port;
+            $mail->Host = $host['host'];
+            $mail->Port = $host['port'];
             $mail->From =  $from['from'];
             $mail->FromName = $from['name'];
 
@@ -102,7 +106,7 @@
             $mail->addReplyTo('');
             $mail->WordWrap = 50;
             
-            foreach( $attachements as $attachment ){
+            foreach( $attachments as $attachment ){
                 $mail->addAttachment($attachment);
             }
 
@@ -118,6 +122,7 @@
                 $logger->debug( 'Message has been sent' );
                 return true;
             }
+            return true;
         }
     }
 ?>
