@@ -1,0 +1,59 @@
+<?php 
+/**
+ * This configuration file is used by the Server Side application for Configuration information.
+ * One of the first things a server side module will do is to require this file. The client side
+ * of the application will use the file config.json to store its configuration information.
+ *---------------------------------------------------------------------------------------------------
+ * Programmer		Date 			Notes
+ * Frank Ilagan		03/19/2014		Added comments
+ */
+$appconfig = array();
+
+//---------------------------------------------------------------------------------------------
+//------------------------------- Database Configuration --------------------------------------
+//---------------------------------------------------------------------------------------------
+$appconfig['dbhost'] = '';
+$appconfig['dbname'] = '';
+$appconfig['dbuser'] = '';
+$appconfig['dbpwd'] = '';
+
+
+//---------------------------------------------------------------------------------------------
+//----------------------------------- order_email_delay ---------------------------------------
+//---------------------------------------------------------------------------------------------
+$order_email = [];
+$order_email['out'] = './out/';
+$order_email['error_filename'] = 'order_email_delay_error_%s.csv';
+$order_email['email_sent_filename'] = 'order_email_delay_%s.csv';
+$order_email['so_comment_msg'] = 'SO ORDER DELAY NOTIFICATION %s';
+$order_email['cmnt_type'] = '';
+$order_email['cust_comment'] = 'CUSTOMER WAS NOTIFIED FOR ORDER DELAY';
+$order_email['emp_cd'] = '';
+$order_email['params'] = "'SO_AGE_IN_DAYS_TO_NOTIFY_OF_DELAY', 'CUST_DAYS_BETWEEN_ORDER_DELAY_NOTICE', 'ACCEPTABLE_DAYS_TO_WAIT_FOR_INV'";
+$order_email['replacements'] = array( 'NAME' => '%%NAME%%' );
+$order_email['email_body'] = "Dear %%NAME%%\n\nWith all the time you’re spending at home these days, we’re honored to help make every room a space to relax and rejoice.\n\nDue to the COVID-19 pandemic, it’s no secret that the global supply chain has been tremendously impacted, resulting in temporary delays from our suppliers and vendors. We are sorry to report that for these reasons, there has been a delay in the shipment of your order.\n\nWe know it’s frustrating and we want to assure you we’re working hard to get your order to you as soon as possible. For items with in-home white glove delivery, you’ll be notified to schedule a delivery when all items in your order are ready. For customers that are picking up their furniture, we will send you a message as soon as we have more information.\n\nWe look forward to giving you an update soon and we appreciate your business.\n\nBest Regards,\nMor Furniture For Less";
+
+//Logging functionality
+$logger = [];
+$logger['username'] = 'order_delay';
+$logger['log_name'] = 'order_email_delay_%s.log';
+$logger['log_folder'] = 'logs';
+$logger['priority'] = 3;
+$order_email['logger'] = $logger;
+
+//Email
+$email = [];
+$email['host'] = '';
+$email['port'] = '';
+$email['from'] = '';
+$email['name'] = '';
+$email['subject'] = '';
+$email['email_error_to'] = '';
+$email['email_error_name'] = '';
+$email['email_error_message'] = '';
+$order_email['email'] = $email;
+
+
+$appconfig['order_email_delay'] = $order_email;
+
+

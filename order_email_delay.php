@@ -19,7 +19,7 @@
  * *
  * *
 ***/
-    include_once('../config.php');
+    include_once('./config.php');
     include_once('autoload.php');
     include_once( './libs/PHPMailer/PHPMailerAutoload.php' );
 
@@ -29,7 +29,7 @@
 
     $logger = new ILog($appconfig['order_email_delay']['logger']['username'], sprintf( $appconfig['order_email_delay']['logger']['log_name'], date('ymdhms')), $appconfig['order_email_delay']['logger']['log_folder'], $appconfig['order_email_delay']['logger']['priority']);
 
-    $sendEmail = $argv[1] === 'email' ? true : false;
+    $sendEmail = ($argc > 1 ? ($argv[1] == 'email') ? true : false : false  );
     $host = array( 'host' => $appconfig['order_email_delay']['email']['host'], 'port' => $appconfig['order_email_delay']['email']['port'] );
     $from  = array( 'from' => $appconfig['order_email_delay']['email']['from'], 'name' => $appconfig['order_email_delay']['email']['name'] );
 
@@ -73,21 +73,21 @@
                 array_push( $emailsNotSent, $order );
                 continue;
             }
+            $error = postCustomerDelayComment( $db, $order['CUST_CD'] );
+            if( !$error ) exit(1); 
+            
+            //Query SO First for sales order details
+            $sale = getSalesOrder( $db, $order['DEL_DOC_NUM'] );
+            $error = postSalesOrderDelayComment( $db, $sale );
+            if( !$error ) exit(1); 
+
+            //Update customer 
+            $updt = updateCustomerNotificationDate( $db, $order['CUST_CD'] );
+            if( !$updt ) $logger->error( "Fail update SO" );
         }
         //Save sent emails
         array_push( $emailsSent, $order );
-
-        $error = postCustomerDelayComment( $db, $order['CUST_CD'] );
-        if( !$error ) exit(1); 
         
-        //Query SO First for sales order details
-        $sale = getSalesOrder( $db, $order['DEL_DOC_NUM'] );
-        $error = postSalesOrderDelayComment( $db, $sale );
-        if( !$error ) exit(1); 
-
-        //Update customer 
-        $updt = updateCustomerNotificationDate( $db, $order['CUST_CD'] );
-        if( !$updt ) $logger->error( "Fail update SO" );
 
     } 
 
